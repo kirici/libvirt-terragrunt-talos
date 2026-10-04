@@ -1,0 +1,10 @@
+# Generic
+*.bak
+*.tar*
+
+# Project
+.terragrunt-cache/
+.terraform/
+.state/
+out/
+.env.local

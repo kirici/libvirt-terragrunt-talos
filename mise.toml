@@ -1,0 +1,76 @@
+[tools]
+opentofu = "latest"
+terragrunt = "latest"
+talosctl = "latest"
+kubectl = "latest"
+helm = "latest"
+cilium-cli = "latest"
+"aqua:cilium/hubble" = "latest"
+
+[env]
+# Holds TOFU_STATE_PASSPHRASE, created once by `mise run secrets`.
+_.file = ".env.local"
+TG_TF_PATH = "tofu"
+# One shared provider download instead of one per unit; five units would otherwise fetch the same providers repeatedly.
+TG_PROVIDER_CACHE = "1"
+KUBECONFIG = "{{config_root}}/out/kubeconfig"
+TALOSCONFIG = "{{config_root}}/out/talosconfig"
+
+[tasks.secrets]
+description = "Create the state encryption passphrase (once)"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+if [[ -e .env.local ]]; then
+    echo '.env.local already exists, refusing to overwrite the passphrase for existing state' >&2
+    exit 1
+fi
+umask 077
+printf 'TOFU_STATE_PASSPHRASE=%s\n' "key_$(openssl rand -base64 32)" > .env.local
+'''
+
+[tasks.doctor]
+description = "Check that the host can run the libvirt side of this repo"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+virsh -c qemu:///system uri
+virsh -c qemu:///system net-list --all
+[[ -r /dev/kvm ]] \
+    || { echo '/dev/kvm is not readable' >&2; exit 1; }
+id -nG \
+    | tr ' ' '\n' \
+    | grep -qx libvirt \
+    || { echo 'user is not in the libvirt group (log out and in again after usermod)' >&2; exit 1; }
+'''
+
+[tasks.up]
+description = "Apply image, network, nodes, cluster and cni in dependency order, then export client configs"
+run = "terragrunt run --all apply"
+depends_post = ["kubeconfig"]
+
+[tasks.down]
+description = "Destroy everything in reverse dependency order"
+run = "terragrunt run --all destroy"
+
+[tasks.plan]
+description = "Plan all units; cni can only plan once the cluster exists because its providers need a live API server"
+run = "terragrunt run --all plan"
+
+[tasks.kubeconfig]
+description = "Write out/kubeconfig and out/talosconfig from the cluster unit"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+mkdir -p out
+terragrunt --working-dir live/cluster output -raw kubeconfig_raw > out/kubeconfig
+terragrunt --working-dir live/cluster output -raw talosconfig > out/talosconfig
+chmod 600 out/kubeconfig out/talosconfig
+'''
+
+[tasks.fmt]
+description = "Format OpenTofu and Terragrunt files"
+run = [
+    "tofu fmt -recursive modules",
+    "terragrunt hcl fmt",
+]
