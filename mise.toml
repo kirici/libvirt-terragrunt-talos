@@ -15,6 +15,7 @@ TG_TF_PATH = "tofu"
 TG_PROVIDER_CACHE = "1"
 KUBECONFIG = "{{config_root}}/out/kubeconfig"
 TALOSCONFIG = "{{config_root}}/out/talosconfig"
+LIBVIRT_DEFAULT_URI = "qemu:///system"
 
 [tasks.secrets]
 description = "Create the state encryption passphrase (once)"
